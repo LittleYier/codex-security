@@ -61,6 +61,7 @@ TEXT_CODE_EXTENSIONS = {
     ".svelte",
     ".swift",
     ".tf",
+    ".tfvars",
     ".toml",
     ".ts",
     ".tsx",
