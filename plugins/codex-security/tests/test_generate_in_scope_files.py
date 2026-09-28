@@ -148,6 +148,25 @@ def test_inventory_keeps_ignored_tracked_files_without_ignored_untracked_files(
     assert "./app/ignored.skip" not in paths
 
 
+@pytest.mark.parametrize(
+    "scope", [".", "ignored", "./ignored", "ignored/tracked.py", "./ignored/tracked.py"]
+)
+def test_inventory_lists_ignored_tracked_files_once(tmp_path: Path, scope: str) -> None:
+    repository = make_repository(tmp_path)
+    write_file(repository, "ignored/tracked.py")
+    git(repository, "add", "--force", "--", "ignored/tracked.py")
+    output = tmp_path / "in_scope_files.txt"
+
+    result = run_inventory(repository, scope, output)
+
+    assert result.returncode == 0, result.stderr
+    rows = output.read_bytes().splitlines()
+    prefix = b"./" if scope == "." or scope.startswith("./") else b""
+    assert rows.count(prefix + b"ignored/tracked.py") == 1
+    assert rows == sorted(set(rows))
+    assert result.stdout == f"Recorded {len(rows)} in-scope files.\n"
+
+
 @pytest.mark.skipif(os.name == "nt", reason="Windows does not allow CR/LF in filenames")
 @pytest.mark.parametrize("separator", ["\n", "\r", "\r\n"])
 @pytest.mark.parametrize("ignored_tracked", [False, True])
