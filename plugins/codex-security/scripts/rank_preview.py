@@ -303,7 +303,10 @@ def mask_c_style_source(text: str, suffix: str) -> str:
             continue
         if heredoc_terminator:
             if index == 0 or text[index - 1] == "\n":
-                terminator_match = re.compile(rf"[ \t]*{heredoc_terminator}\b").match(text, index)
+                # PHP identifiers allow every non-ASCII byte, including non-word characters.
+                terminator_match = re.compile(
+                    rf"[ \t]*{heredoc_terminator}(?![A-Za-z0-9_\x80-\U0010ffff])"
+                ).match(text, index)
                 if terminator_match:
                     masked.extend(" " * (terminator_match.end() - index))
                     index = terminator_match.end()
