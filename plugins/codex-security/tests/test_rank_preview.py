@@ -551,6 +551,24 @@ def test_javascript_preview_lists_class_field_arrow_handlers(tmp_path: Path) -> 
     assert "method Controller.validate" in preview
 
 
+def test_php_heredoc_terminator_can_continue_expression(tmp_path: Path) -> None:
+    source = """<?php
+function before() {}
+
+$values = [<<<TXT
+hello
+TXT,
+];
+
+function after() {}
+"""
+
+    preview = generate_preview(tmp_path, "sample.php", source)
+
+    assert "function before" in preview
+    assert "function after" in preview
+
+
 def test_php_heredoc_does_not_hide_following_method(tmp_path: Path) -> None:
     source = """<?php
 class Service {

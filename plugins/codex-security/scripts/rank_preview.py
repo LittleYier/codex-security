@@ -303,13 +303,10 @@ def mask_c_style_source(text: str, suffix: str) -> str:
             continue
         if heredoc_terminator:
             if index == 0 or text[index - 1] == "\n":
-                line_end = text.find("\n", index)
-                if line_end < 0:
-                    line_end = len(text)
-                candidate = text[index:line_end].strip().removesuffix(";")
-                if candidate == heredoc_terminator:
-                    masked.extend(" " * (line_end - index))
-                    index = line_end
+                terminator_match = re.compile(rf"[ \t]*{heredoc_terminator}\b").match(text, index)
+                if terminator_match:
+                    masked.extend(" " * (terminator_match.end() - index))
+                    index = terminator_match.end()
                     heredoc_terminator = ""
                     continue
             masked.append(" ")
