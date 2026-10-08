@@ -64,19 +64,24 @@ function commandEvent(command: string, id: string, timestamp?: string) {
 
 describe("saved scan logs", () => {
   test.each([
-    ["prefix first", [0], [0, 1, 1, 2], 1, false],
-    ["complete first", [0, 1, 1, 2], [0], 0, false],
-    ["identical copies", [0, 1, 1, 2], [0, 1, 1, 2], 0, false],
-    ["longer divergent copy", [0, 2], [0, 1, 1, 2], 0, false],
-    ["shorter divergent copy", [0, 1, 1, 2], [0, 2], 0, false],
-    ["equal-length divergent copy", [0, 1], [0, 2], 0, false],
-    ["complete archived copy", [0], [0, 1, 1, 2], 1, true],
-    ["prefix archived copy", [0, 1, 1, 2], [0], 0, true],
-    ["identical archived copy", [0, 1, 1, 2], [0, 1, 1, 2], 0, true],
-    ["divergent archived copy", [0, 2], [0, 1, 1, 2], 0, true],
+    ["prefix first", [0], [0, 1, 1, 2], 1, false, false],
+    ["complete first", [0, 1, 1, 2], [0], 0, false, false],
+    ["identical copies", [0, 1, 1, 2], [0, 1, 1, 2], 0, false, false],
+    ["longer divergent copy", [0, 2], [0, 1, 1, 2], 0, false, false],
+    ["shorter divergent copy", [0, 1, 1, 2], [0, 2], 0, false, false],
+    ["equal-length divergent copy", [0, 1], [0, 2], 0, false, false],
+    ["complete archived copy", [0], [0, 1, 1, 2], 1, true, false],
+    ["prefix archived copy", [0, 1, 1, 2], [0], 0, true, false],
+    ["identical archived copy", [0, 1, 1, 2], [0, 1, 1, 2], 0, true, false],
+    ["divergent archived copy", [0, 2], [0, 1, 1, 2], 0, true, false],
+    ["complete compressed copy", [0], [0, 1, 1, 2], 1, false, true],
+    ["prefix compressed copy", [0, 1, 1, 2], [0], 0, false, true],
+    ["identical compressed copy", [0, 1, 1, 2], [0, 1, 1, 2], 0, false, true],
+    ["divergent compressed copy", [0, 2], [0, 1, 1, 2], 0, false, true],
+    ["complete compressed archived copy", [0], [0, 1, 1, 2], 1, true, true],
   ] as const)(
     "retains complete copied rollout events and precedence: %s",
-    async (_label, first, second, selected, archived) => {
+    async (_label, first, second, selected, archived, compressed) => {
       const homes = [await temporaryHome(), await temporaryHome()];
       const activity = [
         commandEvent("first", "first-call", "2026-08-11T12:00:03Z"),
@@ -92,6 +97,18 @@ describe("saved scan logs", () => {
           copies[index]!.map((event) => activity[event]!),
           "parent",
         );
+      }
+      if (compressed) {
+        const path = join(
+          homes[1]!,
+          "sessions",
+          "2026",
+          "08",
+          "11",
+          "rollout-worker.jsonl",
+        );
+        await writeFile(`${path}.zst`, zstdCompressSync(await readFile(path)));
+        unlinkSync(path);
       }
       if (archived) {
         await rename(
@@ -118,7 +135,7 @@ describe("saved scan logs", () => {
           "2026",
           "08",
           "11",
-          "rollout-worker.jsonl",
+          `rollout-worker.jsonl${compressed && selected === 1 ? ".zst" : ""}`,
         ),
       );
       expect(
