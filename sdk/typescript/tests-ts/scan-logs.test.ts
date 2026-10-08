@@ -2,8 +2,13 @@ import { writeJsonLines } from "./support/json.js";
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { unlinkSync } from "node:fs";
 import { join } from "node:path";
+import { zstdCompressSync } from "node:zlib";
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
-import { readSavedScanLogs, readScanLogs } from "../src/scan-logs.js";
+import {
+  findScanSession,
+  readSavedScanLogs,
+  readScanLogs,
+} from "../src/scan-logs.js";
 import { createApiTestFixtures } from "./support/temporary-directories.js";
 
 const { temporaryDirectory: temporaryHome, cleanup } = createApiTestFixtures(
@@ -364,6 +369,52 @@ describe("saved scan logs", () => {
     expect(JSON.stringify(result)).toContain("SYNTHETIC_KEY");
     expect(JSON.stringify(result)).toContain("private command output");
     expect(JSON.stringify(result)).not.toContain("private unrelated scan");
+  });
+
+  test("reads sessions that Codex compressed", async () => {
+    const home = await temporaryHome();
+    await writeSession(
+      home,
+      "parent",
+      [commandEvent("parent work", "parent-call")],
+      undefined,
+      undefined,
+      "/scan",
+    );
+    await writeSession(
+      home,
+      "worker",
+      [commandEvent("worker work", "worker-call")],
+      "parent",
+    );
+    const directory = join(home, "sessions", "2026", "08", "11");
+    for (const threadId of ["parent", "worker"]) {
+      const path = join(directory, `rollout-${threadId}.jsonl`);
+      await writeFile(`${path}.zst`, zstdCompressSync(await readFile(path)));
+      unlinkSync(path);
+    }
+
+    expect(await findScanSession(home, "parent")).toMatchObject({
+      workingDirectory: "/scan",
+      path: join(directory, "rollout-parent.jsonl.zst"),
+    });
+    const result = await readScanLogs({
+      scanId: "scan-1",
+      threadId: "parent",
+      codexHome: home,
+    });
+    expect(result.events).toEqual([
+      expect.objectContaining({ threadId: "parent" }),
+      {
+        threadId: "parent",
+        event: commandEvent("parent work", "parent-call"),
+      },
+      expect.objectContaining({ threadId: "worker" }),
+      {
+        threadId: "worker",
+        event: commandEvent("worker work", "worker-call"),
+      },
+    ]);
   });
 
   test("excludes inherited parent history from worker logs", async () => {
