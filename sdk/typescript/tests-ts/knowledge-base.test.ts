@@ -490,6 +490,18 @@ describe("scan knowledge bases", () => {
       join(root, "self-closing-tab.docx"),
       docx("User", "Permission", "<w:tab/>"),
     );
+    await writeFile(
+      join(root, "tracked-change.docx"),
+      docx("Admin API is ", "internal only", "<w:delText>public</w:delText>"),
+    );
+    await writeFile(
+      join(root, "field-code.docx"),
+      docx(
+        "See ",
+        "the runbook",
+        '<w:instrText xml:space="preserve"> HYPERLINK "https://example.com/runbook" </w:instrText>',
+      ),
+    );
 
     const knowledgeBase = await prepareKnowledgeBase([root]);
     temporaryDirectories.track(knowledgeBase.path);
@@ -501,6 +513,8 @@ describe("scan knowledge bases", () => {
     expect(documents).toContain("Authentication\nReview sessions\n");
     expect(documents).toContain("Role\tCapability\n");
     expect(documents).toContain("User\tPermission\n");
+    expect(documents).toContain("Admin API is internal only\n");
+    expect(documents).toContain("See the runbook\n");
   });
 
   test.each([

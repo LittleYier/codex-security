@@ -310,6 +310,10 @@ function extractDocx(path: string, bytes: Uint8Array): string {
     }
     return decodeXml(
       xml
+        .replace(
+          /<((?:\w+:)?(?:delText|delInstrText|instrText))\b[^>]*?(?:\/>|>[\s\S]*?<\/\1\s*>)/gu,
+          "",
+        )
         .replace(/<\/(?:\w+:)?p\s*>/gu, "\n")
         .replace(/<(?:\w+:)?(?:br|cr)\b[^>]*>/gu, "\n")
         .replace(/<(?:\w+:)?tab\b[^>]*>/gu, "\t")
