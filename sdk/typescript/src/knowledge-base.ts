@@ -305,13 +305,28 @@ function extractDocx(path: string, bytes: Uint8Array): string {
     if (document === undefined) throw new Error("Missing word/document.xml.");
     const xml = decodeText(path, document);
     const text: string[] = [];
-    const fields: boolean[] = [];
+    const fields: {
+      instructions: boolean;
+      literal: string[];
+      result: string[];
+    }[] = [];
     const parser = new SaxesParser();
     let documentElement = false;
     let deletedDepth = 0;
+    let instructionText = false;
     const append = (value: string) => {
-      // A nested field result is still hidden inside an outer field's code.
-      if (deletedDepth === 0 && !fields.includes(true)) text.push(value);
+      if (deletedDepth > 0) return;
+      const field = fields.at(-1);
+      if (field === undefined) text.push(value);
+      else if (!field.instructions) field.result.push(value);
+      else if (!instructionText) field.literal.push(value);
+    };
+    const finishField = (closed: boolean) => {
+      const field = fields.pop();
+      if (field !== undefined) {
+        // Unclosed fields retain ordinary runs; completed fields show only results.
+        append((closed ? "" : field.literal.join("")) + field.result.join(""));
+      }
     };
     parser.on("opentag", ({ name, attributes }) => {
       const localName = name.split(":").at(-1);
@@ -324,21 +339,24 @@ function extractDocx(path: string, bytes: Uint8Array): string {
       }
       if (deletedDepth > 0) return;
       if (localName === "document") documentElement = true;
+      else if (localName === "instrText") instructionText = true;
       else if (localName === "fldChar") {
         const type = decodeXml(
           Object.entries(attributes).find(
             ([name]) => name.split(":").at(-1) === "fldCharType",
           )?.[1] ?? "",
         );
-        if (type === "begin") fields.push(true);
+        if (type === "begin")
+          fields.push({ instructions: true, literal: [], result: [] });
         else if (type === "separate" && fields.length > 0)
-          fields[fields.length - 1] = false;
-        else if (type === "end") fields.pop();
+          fields.at(-1)!.instructions = false;
+        else if (type === "end") finishField(true);
       } else if (localName === "br" || localName === "cr") append("\n");
       else if (localName === "tab") append("\t");
     });
     parser.on("closetag", ({ name, isSelfClosing }) => {
       const localName = name.split(":").at(-1);
+      if (localName === "instrText") instructionText = false;
       if (!isSelfClosing && localName === "p") append("\n");
       if (
         localName === "del" ||
@@ -354,6 +372,7 @@ function extractDocx(path: string, bytes: Uint8Array): string {
     // CDATA is literal text, so only undo this escaping in its handler.
     parser.write(xml.replaceAll("&", "&amp;")).close();
     if (!documentElement) throw new Error("Malformed word/document.xml.");
+    while (fields.length > 0) finishField(false);
     return text.join("");
   } catch (error) {
     throw new Error(`Cannot extract text from knowledge base DOCX: ${path}`, {

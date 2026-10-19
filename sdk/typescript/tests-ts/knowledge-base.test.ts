@@ -529,6 +529,20 @@ describe("scan knowledge bases", () => {
 
   test.each([
     [
+      "ordinary runs after an unclosed field",
+      '<w:p><w:r><w:fldChar w:fldCharType="begin"/><w:instrText>AUTHOR</w:instrText></w:r></w:p>' +
+        "<w:p><w:r><w:t>Require authorization</w:t></w:r></w:p>",
+      "\nRequire authorization\n",
+    ],
+    [
+      "nested field results inside an unclosed field",
+      '<w:p><w:r><w:fldChar w:fldCharType="begin"/><w:instrText>IF </w:instrText>' +
+        '<w:fldChar w:fldCharType="begin"/><w:instrText>AUTHOR</w:instrText>' +
+        '<w:fldChar w:fldCharType="separate"/><w:t>Example Author</w:t><w:fldChar w:fldCharType="end"/>' +
+        "<w:t> requires authorization</w:t></w:r></w:p>",
+      "Example Author requires authorization\n",
+    ],
+    [
       "literal markup in standalone instruction text",
       "<w:p><w:r><w:instrText><![CDATA[Require <authorization> &amp; audit]]></w:instrText></w:r></w:p>",
       "Require <authorization> &amp; audit\n",
