@@ -12,6 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import { basename, extname, join, resolve } from "node:path";
 import { unzipSync } from "fflate";
+import { SaxesParser } from "saxes";
 import { ConfigurationError, errorMessage } from "./errors.js";
 import { expandHome } from "./runtime.js";
 import {
@@ -303,22 +304,57 @@ function extractDocx(path: string, bytes: Uint8Array): string {
     const document = files["word/document.xml"];
     if (document === undefined) throw new Error("Missing word/document.xml.");
     const xml = decodeText(path, document);
-    if (
-      !/<(?:\w+:)?document\b[^>]*>[\s\S]*<\/(?:\w+:)?document\s*>/u.test(xml)
-    ) {
-      throw new Error("Malformed word/document.xml.");
-    }
-    return decodeXml(
-      xml
-        .replace(
-          /<((?:\w+:)?(?:delText|delInstrText|instrText))\b[^>]*?(?:\/>|>[\s\S]*?<\/\1\s*>)/gu,
-          "",
-        )
-        .replace(/<\/(?:\w+:)?p\s*>/gu, "\n")
-        .replace(/<(?:\w+:)?(?:br|cr)\b[^>]*>/gu, "\n")
-        .replace(/<(?:\w+:)?tab\b[^>]*>/gu, "\t")
-        .replace(/<[^>]+>/gu, ""),
-    );
+    const text: string[] = [];
+    const fields: boolean[] = [];
+    const parser = new SaxesParser();
+    let documentElement = false;
+    let deletedDepth = 0;
+    const append = (value: string) => {
+      // A nested field result is still hidden inside an outer field's code.
+      if (deletedDepth === 0 && !fields.includes(true)) text.push(value);
+    };
+    parser.on("opentag", ({ name, attributes }) => {
+      const localName = name.split(":").at(-1);
+      if (
+        localName === "del" ||
+        localName === "delText" ||
+        localName === "delInstrText"
+      ) {
+        deletedDepth++;
+      }
+      if (deletedDepth > 0) return;
+      if (localName === "document") documentElement = true;
+      else if (localName === "fldChar") {
+        const type = decodeXml(
+          Object.entries(attributes).find(
+            ([name]) => name.split(":").at(-1) === "fldCharType",
+          )?.[1] ?? "",
+        );
+        if (type === "begin") fields.push(true);
+        else if (type === "separate" && fields.length > 0)
+          fields[fields.length - 1] = false;
+        else if (type === "end") fields.pop();
+      } else if (localName === "br" || localName === "cr") append("\n");
+      else if (localName === "tab") append("\t");
+    });
+    parser.on("closetag", ({ name, isSelfClosing }) => {
+      const localName = name.split(":").at(-1);
+      if (!isSelfClosing && localName === "p") append("\n");
+      if (
+        localName === "del" ||
+        localName === "delText" ||
+        localName === "delInstrText"
+      ) {
+        deletedDepth--;
+      }
+    });
+    parser.on("text", (value) => append(decodeXml(value)));
+    parser.on("cdata", (value) => append(value.replaceAll("&amp;", "&")));
+    // Keep the existing entity decoder's handling of unusable references.
+    // CDATA is literal text, so only undo this escaping in its handler.
+    parser.write(xml.replaceAll("&", "&amp;")).close();
+    if (!documentElement) throw new Error("Malformed word/document.xml.");
+    return text.join("");
   } catch (error) {
     throw new Error(`Cannot extract text from knowledge base DOCX: ${path}`, {
       cause: error,
