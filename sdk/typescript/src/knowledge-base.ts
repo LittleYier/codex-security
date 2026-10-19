@@ -304,12 +304,13 @@ function extractDocx(path: string, bytes: Uint8Array): string {
     const document = files["word/document.xml"];
     if (document === undefined) throw new Error("Missing word/document.xml.");
     const xml = decodeText(path, document);
-    const text: string[] = [];
-    const fields: {
+    let text: string[] = [];
+    let fields: {
       instructions: boolean;
       literal: string[];
       result: string[];
     }[] = [];
+    const stories: { text: string[]; fields: typeof fields }[] = [];
     const parser = new SaxesParser();
     let documentElement = false;
     let deletedDepth = 0;
@@ -338,7 +339,12 @@ function extractDocx(path: string, bytes: Uint8Array): string {
         deletedDepth++;
       }
       if (deletedDepth > 0) return;
-      if (localName === "document") documentElement = true;
+      if (localName === "txbxContent") {
+        // Text boxes have their own field boundaries.
+        stories.push({ text, fields });
+        text = [];
+        fields = [];
+      } else if (localName === "document") documentElement = true;
       else if (localName === "instrText") instructionText = true;
       else if (localName === "fldChar") {
         const type = decodeXml(
@@ -356,6 +362,12 @@ function extractDocx(path: string, bytes: Uint8Array): string {
     });
     parser.on("closetag", ({ name, isSelfClosing }) => {
       const localName = name.split(":").at(-1);
+      if (deletedDepth === 0 && localName === "txbxContent") {
+        while (fields.length > 0) finishField(false);
+        const content = text.join("");
+        ({ text, fields } = stories.pop()!);
+        append(content);
+      }
       if (localName === "instrText") instructionText = false;
       if (!isSelfClosing && localName === "p") append("\n");
       if (

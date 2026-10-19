@@ -529,6 +529,28 @@ describe("scan knowledge bases", () => {
 
   test.each([
     [
+      "an unclosed text-box field inside a main-story field result",
+      '<w:p><w:r><w:fldChar w:fldCharType="begin"/><w:instrText>HYPERLINK "https://example.com"</w:instrText>' +
+        '<w:fldChar w:fldCharType="separate"/><w:t>Main-before </w:t></w:r>' +
+        '<w:r><w:pict xmlns:v="urn:schemas-microsoft-com:vml"><v:rect id="TextBox1" style="width:180pt;height:72pt"><v:textbox><w:txbxContent>' +
+        '<w:p><w:r><w:fldChar w:fldCharType="begin"/><w:instrText>AUTHOR</w:instrText><w:t>Text-box guidance.</w:t></w:r></w:p>' +
+        "</w:txbxContent></v:textbox></v:rect></w:pict></w:r>" +
+        '<w:r><w:fldChar w:fldCharType="end"/><w:instrText>Main-after</w:instrText></w:r></w:p>',
+      "Main-before Text-box guidance.\nMain-after\n",
+    ],
+    [
+      "independent fields in sibling text boxes",
+      "<w:p><w:r><w:t>Main-before </w:t></w:r>" +
+        '<w:r><w:pict xmlns:v="urn:schemas-microsoft-com:vml"><v:rect id="TextBox1" style="width:180pt;height:72pt"><v:textbox><w:txbxContent>' +
+        '<w:p><w:r><w:fldChar w:fldCharType="begin"/><w:instrText>AUTHOR</w:instrText><w:t>First text-box guidance.</w:t></w:r></w:p>' +
+        "</w:txbxContent></v:textbox></v:rect></w:pict></w:r>" +
+        '<w:r><w:pict xmlns:v="urn:schemas-microsoft-com:vml"><v:rect id="TextBox2" style="width:180pt;height:72pt"><v:textbox><w:txbxContent>' +
+        '<w:p><w:r><w:t>Second text-box guidance.</w:t><w:fldChar w:fldCharType="end"/></w:r></w:p>' +
+        "</w:txbxContent></v:textbox></v:rect></w:pict></w:r>" +
+        "<w:r><w:t>Main-after</w:t></w:r></w:p>",
+      "Main-before First text-box guidance.\nSecond text-box guidance.\nMain-after\n",
+    ],
+    [
       "ordinary runs after an unclosed field",
       '<w:p><w:r><w:fldChar w:fldCharType="begin"/><w:instrText>AUTHOR</w:instrText></w:r></w:p>' +
         "<w:p><w:r><w:t>Require authorization</w:t></w:r></w:p>",
