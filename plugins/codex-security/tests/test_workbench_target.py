@@ -1021,6 +1021,24 @@ def test_git_metadata_preserves_unicode_commit_subject(
     ) == f"{subject}\n".encode("utf-8")
 
 
+def test_git_metadata_ignores_signature_output_in_commit_subject(tmp_path: Path) -> None:
+    target = tmp_path / "target"
+    initialize_git_repository(target)
+    key = tmp_path / "signing-key"
+    subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(key)], check=True)
+    for name, value in [
+        ("gpg.format", "ssh"),
+        ("user.signingkey", str(key)),
+        ("log.showSignature", "true"),
+    ]:
+        subprocess.run(["git", "config", name, value], cwd=target, check=True)
+    subprocess.run(
+        ["git", "commit", "--allow-empty", "-S", "-qm", "Signed subject"], cwd=target, check=True
+    )
+
+    assert WORKBENCH_TARGET["git_target_metadata"](target)["commitSubject"] == "Signed subject"
+
+
 @pytest.mark.parametrize("encoding", ["cp932", "cp949"])
 def test_git_output_decodes_repository_paths_as_utf8(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, encoding: str
