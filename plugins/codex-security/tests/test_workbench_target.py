@@ -1021,20 +1021,27 @@ def test_git_metadata_preserves_unicode_commit_subject(
     ) == f"{subject}\n".encode("utf-8")
 
 
+@pytest.mark.cross_platform
 def test_git_metadata_ignores_signature_output_in_commit_subject(tmp_path: Path) -> None:
     target = tmp_path / "target"
     initialize_git_repository(target)
-    key = tmp_path / "signing-key"
-    subprocess.run(["ssh-keygen", "-q", "-t", "ed25519", "-N", "", "-f", str(key)], check=True)
-    for name, value in [
-        ("gpg.format", "ssh"),
-        ("user.signingkey", str(key)),
-        ("log.showSignature", "true"),
-    ]:
-        subprocess.run(["git", "config", name, value], cwd=target, check=True)
-    subprocess.run(
-        ["git", "commit", "--allow-empty", "-S", "-qm", "Signed subject"], cwd=target, check=True
+    headers = subprocess.check_output(["git", "cat-file", "commit", "HEAD"], cwd=target).split(
+        b"\n\n", 1
+    )[0]
+    # A synthetic signature reproduces Git's extra output without a signing tool.
+    commit = headers + (
+        b"\ngpgsig -----BEGIN SSH SIGNATURE-----\n synthetic\n -----END SSH SIGNATURE-----"
+        b"\n\nSigned subject\n"
     )
+    revision = (
+        subprocess.check_output(
+            ["git", "hash-object", "-t", "commit", "-w", "--stdin"], cwd=target, input=commit
+        )
+        .decode()
+        .strip()
+    )
+    subprocess.run(["git", "update-ref", "HEAD", revision], cwd=target, check=True)
+    subprocess.run(["git", "config", "log.showSignature", "true"], cwd=target, check=True)
 
     assert WORKBENCH_TARGET["git_target_metadata"](target)["commitSubject"] == "Signed subject"
 
