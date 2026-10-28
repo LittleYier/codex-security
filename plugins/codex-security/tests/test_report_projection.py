@@ -71,7 +71,7 @@ def test_projection_normalizes_tilde_fences_and_parenthesized_lists() -> None:
     markdown = PROJECTION.build_report_markdown(manifest, findings, coverage)
 
     assert "\n~~~" not in markdown
-    assert "Text: ~~~ code fence ~~~" in markdown
+    assert "Text: \\~\\~\\~ code fence \\~\\~\\~" in markdown
     assert "Text: 1) Validate the record length." in markdown
 
 
@@ -801,6 +801,15 @@ def test_projection_escapes_raw_html_in_markdown() -> None:
 
     assert '<img src="x" onerror="alert(1)">' not in markdown_text
     assert r'\<img src="x" onerror="alert(1)"\>' in markdown_text
+
+
+def test_projection_escapes_tildes_in_markdown() -> None:
+    manifest, findings, coverage = canonical_documents()
+    findings["findings"][0]["summary"] = "Retries 3~5 times, then 5~10 times"
+
+    markdown_text = PROJECTION.generate_report_markdown(manifest, findings, coverage).decode()
+
+    assert r"Retries 3\~5 times, then 5\~10 times" in markdown_text
 
 
 def test_projection_keeps_html_entities_literal_in_markdown() -> None:

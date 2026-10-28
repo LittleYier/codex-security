@@ -38,7 +38,7 @@ def _escape_markdown(value: str) -> str:
         dot = token.split("/", 1)[0].find(".")
         if "//" in token or (dot >= 0 and re.search(r"[/?#]", token[dot + 1 :])):
             urls.append(match.span())
-    punctuation = r"[\\`*_\[\]<>]|" + ENTITY_AMP_RE
+    punctuation = r"[\\`*_~\[\]<>]|" + ENTITY_AMP_RE
     pattern = f"(?P<code>{INLINE_CODE_RE})|{punctuation}"
 
     def escape(match: re.Match[str]) -> str:
