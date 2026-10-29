@@ -256,16 +256,13 @@ describe("Codex authentication process boundary", () => {
   );
 
   test("reads login URLs from hyperlinks terminated with ST", async () => {
-    const root = await temporaryDirectory("codex-security-auth-osc-");
-    const script = join(root, "login.mjs");
     const url = "https://auth.example.test/device";
-    await writeFile(
-      script,
-      `process.stderr.write(${JSON.stringify(`Open \u001b]8;;${url}\u001b\\${url}\u001b]8;;\u001b\\\nUser code: ABCD-EFGH\n`)}, () => process.exit(0));\n`,
-    );
+    const st = "\u001b\\";
+    const link = `\u001b]8;;https://link.example.test/${st}${url}\u001b]8;;${st}`;
+    const output = `Open ${link}\nUser code: ABCD-EFGH\n`;
     const handle = new CodexLoginHandle(
       nodeCommand(),
-      [script],
+      ["-e", "process.stderr.write(process.argv[1])", output],
       process.env,
       () => {},
     );
