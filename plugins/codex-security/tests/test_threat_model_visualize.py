@@ -663,10 +663,11 @@ class ControlValidation(unittest.TestCase):
         self.assertNotIn("</script><script>unsafe()</script>", html)
 
     def test_utf8_assessment_hash_and_ranged_quote_preserve_line_endings(self):
+        non_line_breaks = "\v\f\x1c\x1d\x1e\x85\u2028\u2029"
         for newline in ("\n", "\r\n", "\r"):
             with self.subTest(newline=repr(newline)):
                 quote = f"policy denies this caller{newline}Details: 日本語"
-                assessment = f"Context: café\x0cpage two\u2028more{newline}{quote}{newline}"
+                assessment = f"Context: café{non_line_breaks}continued{newline}{quote}{newline}"
                 assessment_bytes = assessment.encode("utf-8")
                 evidence = self.model["evidence"][0]
                 evidence.update(quote=quote, startLine=2, endLine=3)
@@ -676,7 +677,8 @@ class ControlValidation(unittest.TestCase):
                 evidence["endLine"] = 2
                 with self.assertRaisesRegex(ValueError, "quotation outside stated range"):
                     builder.validate(self.model, assessment_bytes)
-                evidence.update(startLine=4, endLine=5)
+                # str.splitlines() incorrectly counts eight extra lines in the context.
+                evidence.update(startLine=10, endLine=11)
                 with self.assertRaisesRegex(ValueError, "invalid assessment line range"):
                     builder.validate(self.model, assessment_bytes)
 
