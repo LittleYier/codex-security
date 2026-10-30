@@ -682,6 +682,15 @@ class ControlValidation(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, "quotation outside stated range"):
                     builder.validate(self.model, assessment)
 
+    def test_ranged_quote_counts_only_cr_and_lf_as_line_breaks(self):
+        assessment = "Context\x0cpage two\u2028more\npolicy denies this caller\n"
+        evidence = self.model["evidence"][0]
+        evidence.update(quote="policy denies this caller", startLine=2, endLine=2)
+        builder.validate(self.model, assessment)
+        evidence.update(startLine=3, endLine=3)
+        with self.assertRaisesRegex(ValueError, "invalid assessment line range"):
+            builder.validate(self.model, assessment)
+
     def test_assessment_hash_does_not_accept_newline_normalization(self):
         assessment = "policy denies this caller\r\n"
         self.model["assessmentSha256"] = hashlib.sha256(

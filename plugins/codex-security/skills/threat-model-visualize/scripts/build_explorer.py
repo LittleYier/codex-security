@@ -3,6 +3,7 @@
 
 import argparse
 import hashlib
+import io
 import json
 import math
 import re
@@ -446,7 +447,8 @@ def validate(model, assessment):
                     any(a != b for a, b in pairwise(points)),
                     f"{c['id']}: marker edge must have nonzero length",
                 )
-    lines = assessment.splitlines(keepends=True)
+    # Only CR, LF and CRLF end lines; splitlines() also splits on form feeds and Unicode separators.
+    lines = io.StringIO(assessment, newline="").readlines()
     for e in evidence.values():
         require(
             isinstance(e.get("quote"), str) and e["quote"].strip(), f"{e['id']}: quotation required"
