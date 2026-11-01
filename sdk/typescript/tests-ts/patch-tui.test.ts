@@ -263,6 +263,10 @@ describe("interactive patch finding browser", () => {
         }),
       );
 
+      // Resizing rewraps the source excerpt already displayed for this finding.
+      await writeFile(join(repository, "src", "finding-1.ts"), "file changed");
+      Object.defineProperty(app.stdout, "columns", { value: 110 });
+      await update(() => app.stdout.emit("resize"));
       const frames = [app.lastFrame() ?? ""];
       for (let page = 0; page < 12; page += 1) {
         await press(app, "\u001B[6~");

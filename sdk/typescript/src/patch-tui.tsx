@@ -194,11 +194,7 @@ function matchesSeverity(finding: Finding, severity: PatchSeverity): boolean {
   );
 }
 
-function findingLines(
-  finding: Finding,
-  repository: string,
-  width: number,
-): string[] {
+function findingLines(finding: Finding, repository: string): string[] {
   const evidenceById = new Map(
     (finding.codeEvidence ?? []).map((item) => [item.id, item]),
   );
@@ -211,7 +207,7 @@ function findingLines(
     ),
   ];
 
-  const lines = [safeLine(finding.title), ""];
+  const parts: (string | string[])[] = [safeLine(finding.title), ""];
   for (const [key, value] of fields) {
     if (
       value === null ||
@@ -220,7 +216,7 @@ function findingLines(
     ) {
       continue;
     }
-    lines.push(fieldLabel(key).toUpperCase());
+    parts.push(fieldLabel(key).toUpperCase());
     if (key === "codeEvidence" && Array.isArray(value)) {
       for (const evidence of value as FindingCodeEvidence[]) {
         const { label, path, startLine, endLine, code, explanation, ...other } =
@@ -228,30 +224,33 @@ function findingLines(
         const location = `${safeLine(path)}:${startLine}${
           endLine === undefined ? "" : `–${endLine}`
         }`;
-        lines.push(
+        parts.push(
           label ? `${safeLine(label)} · ${location}` : location,
-          ...numberedCode(safeText(code).split("\n"), startLine),
-          ...safeText(explanation).split("\n"),
-          ...detailLines(other, "  ", evidenceById),
+          numberedCode(safeText(code).split("\n"), startLine),
+          safeText(explanation).split("\n"),
+          detailLines(other, "  ", evidenceById),
         );
       }
     } else if (key === "locations" && Array.isArray(value)) {
       for (const location of value as Finding["locations"]) {
         const { path, startLine, endLine, role, ...other } = location;
-        lines.push(
+        parts.push(
           `${safeLine(path)}:${startLine}${endLine === undefined ? "" : `–${endLine}`}${
             role === undefined ? "" : ` · ${safeLine(role)}`
           }`,
-          ...locationSource(repository, location),
-          ...detailLines(other, "  ", evidenceById),
+          locationSource(repository, location),
+          detailLines(other, "  ", evidenceById),
         );
       }
     } else {
-      lines.push(...detailLines(value, "", evidenceById));
+      parts.push(detailLines(value, "", evidenceById));
     }
-    lines.push("");
+    parts.push("");
   }
+  return parts.flat();
+}
 
+function wrapFindingLines(lines: readonly string[], width: number): string[] {
   return lines.flatMap((line) => {
     if (line.length === 0) return [""];
     const source = SOURCE_LINE.exec(line);
@@ -404,7 +403,8 @@ export function PatchTui({
   };
   const viewportFor = useMemo(() => {
     let cached:
-      { finding: Finding; width: number; details: string[] } | undefined;
+      | { finding: Finding; lines: string[]; width: number; details: string[] }
+      | undefined;
     return (finding: Finding) => {
       const rows = terminal.rows ?? 28;
       const width = Math.max(
@@ -412,10 +412,15 @@ export function PatchTui({
         Math.floor((terminal.columns ?? 100) * 0.58) - 7,
       );
       if (cached?.finding !== finding || cached.width !== width) {
+        const lines =
+          cached?.finding === finding
+            ? cached.lines
+            : findingLines(finding, repository);
         cached = {
           finding,
+          lines,
           width,
-          details: findingLines(finding, repository, width),
+          details: wrapFindingLines(lines, width),
         };
       }
       const visibleRows = Math.max(4, rows - 15);
@@ -435,15 +440,19 @@ export function PatchTui({
     Math.min(focused - visibleRows + 1, findings.length - visibleRows),
   );
   const scroll = (direction: number, page = false) => {
-    const { maximumOffset, visibleRows } = viewportFor(
-      findings[cursor.current.focused]!,
-    );
-    const previous = Math.min(cursor.current.offset, maximumOffset);
-    const next = previous + direction * (page ? visibleRows : 1);
-    const offset = Math.max(0, Math.min(maximumOffset, next));
-    // A resize must repaint even if the same row stays at the top.
-    if (direction === 0 || offset !== cursor.current.offset)
-      navigate({ offset });
+    try {
+      const { maximumOffset, visibleRows } = viewportFor(
+        findings[cursor.current.focused]!,
+      );
+      const previous = Math.min(cursor.current.offset, maximumOffset);
+      const next = previous + direction * (page ? visibleRows : 1);
+      const offset = Math.max(0, Math.min(maximumOffset, next));
+      // A resize must repaint even if the same row stays at the top.
+      if (direction === 0 || offset !== cursor.current.offset)
+        navigate({ offset });
+    } catch (error) {
+      exit(error instanceof Error ? error : new Error(String(error)));
+    }
   };
   const resize = useEffectEvent(() => scroll(0));
   useEffect(() => {
