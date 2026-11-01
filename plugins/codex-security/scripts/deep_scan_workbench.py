@@ -1791,7 +1791,7 @@ def finish_deep_scan_locked(
             )
         canonical_artifacts = None
         if standard_scan_manifest:
-            for artifact_name in ("scan-manifest.json", "findings.json", "coverage.json"):
+            for artifact_name in ("scan-manifest.json", "findings.json"):
                 deep_scan_path(
                     scan,
                     str(Path(scan["scan_dir"]) / artifact_name),
@@ -2040,6 +2040,11 @@ def fail_from_parent_scan(
     message: str | None,
     timestamp: str,
 ) -> None:
+    # Parent failure may supersede a prepared seal even after the coordinator succeeded.
+    connection.execute(
+        "UPDATE deep_scan_runs SET terminal_reviewed_surface_count = NULL WHERE scan_id = ?",
+        (scan_id,),
+    )
     connection.execute(
         """
         UPDATE deep_scan_runs
@@ -2057,7 +2062,7 @@ def cancel_from_parent_scan(connection: sqlite3.Connection, scan_id: str, timest
         """
         UPDATE deep_scan_runs
         SET status = 'canceled', phase = 'terminal', cancel_requested = 1,
-            completed_at = ?, updated_at = ?
+            terminal_reviewed_surface_count = NULL, completed_at = ?, updated_at = ?
         WHERE scan_id = ? AND status IN ('running', 'succeeded')
         """,
         (timestamp, timestamp, scan_id),
