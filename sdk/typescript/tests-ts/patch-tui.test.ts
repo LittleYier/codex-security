@@ -81,22 +81,23 @@ function findings(severities: readonly SeverityLevel[]): Finding[] {
   return result.findings.findings;
 }
 
-async function press(
-  app: ReturnType<typeof render>,
-  input: string,
-): Promise<void> {
+async function update(action: () => void): Promise<void> {
   const environment = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean };
   const previous = environment.IS_REACT_ACT_ENVIRONMENT;
   environment.IS_REACT_ACT_ENVIRONMENT = true;
   try {
     await act(async () => {
-      app.stdin.write(input);
+      action();
       await nextTurn();
     });
   } finally {
     if (previous === undefined) delete environment.IS_REACT_ACT_ENVIRONMENT;
     else environment.IS_REACT_ACT_ENVIRONMENT = previous;
   }
+}
+
+function press(app: ReturnType<typeof render>, input: string): Promise<void> {
+  return update(() => app.stdin.write(input));
 }
 
 describe("interactive patch finding browser", () => {
@@ -440,21 +441,44 @@ describe("interactive patch finding browser", () => {
     ]);
   });
 
-  test("keeps every details scroll step when keys arrive together", async () => {
+  test("uses the current finding and viewport for every buffered scroll key", async () => {
+    const items = findings(["high", "medium"]);
+    items[0]!.summary = "Review this long finding. ".repeat(300);
     const app = render(
       createElement(PatchTui, {
         repository: "/work/example",
-        findings: findings(["high"]),
+        findings: items,
         color: false,
         onComplete: () => {},
       }),
     );
+    const down = "\u001B[B";
+    const pageDown = "\u001B[6~";
+    const pageUp = "\u001B[5~";
 
-    await press(app, "\t");
-    await press(app, "\u001B[B".repeat(3));
+    await press(app, down + "\t" + pageDown.repeat(40));
+    expect(app.lastFrame()).toContain("occ_2");
+    await press(app, pageUp.repeat(40) + down.repeat(3));
     expect(app.lastFrame()).toContain("DETAILS  4–16/");
-    await press(app, "\u001B[6~".repeat(2));
+    await press(app, pageDown.repeat(2));
     expect(app.lastFrame()).toContain("DETAILS  30–42/");
+
+    Object.defineProperty(app.stdout, "columns", { value: 50 });
+    app.stdout.emit("resize");
+    await press(app, pageDown.repeat(40));
+    expect(app.lastFrame()).toContain("occ_2");
+    const lastPageStart = Number(
+      app.lastFrame()!.match(/DETAILS\s+(\d+)–/u)![1],
+    );
+    Object.defineProperty(app.stdout, "rows", { value: 38 });
+    await update(() => app.stdout.emit("resize"));
+    expect(app.lastFrame()).toContain(`DETAILS  ${lastPageStart - 10}–`);
+    await press(app, pageDown + pageUp);
+    const previousPage = app.lastFrame();
+    expect(previousPage).not.toContain("occ_2");
+    await press(app, pageDown);
+    await press(app, pageUp);
+    expect(app.lastFrame()).toBe(previousPage);
   });
 
   test("allows selecting none and canceling without patching", async () => {

@@ -2,7 +2,7 @@ import { readFileSync, realpathSync } from "node:fs";
 import { basename, isAbsolute, relative, resolve, sep } from "node:path";
 import { stripVTControlCharacters } from "node:util";
 import { Box, Text, render, useApp, useInput, useStdout } from "ink";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import type { Finding, FindingCodeEvidence } from "./models.js";
 import { SCAN_SEVERITIES } from "./scan-settings.js";
 
@@ -378,10 +378,18 @@ export function PatchTui({
       ),
     [inputFindings],
   );
-  const [pane, setPane] = useState<"findings" | "details">("findings");
-  const [focused, setFocused] = useState(0);
-  const focusedFinding = useRef(focused);
-  const [offset, setOffset] = useState(0);
+  const [navigation, setNavigation] = useState({
+    detailsActive: false,
+    focused: 0,
+    offset: 0,
+  });
+  // Ink can deliver several keys before React commits the next frame.
+  const cursor = useRef(navigation);
+  const navigate = (change: Partial<typeof navigation>) => {
+    cursor.current = { ...cursor.current, ...change };
+    setNavigation(cursor.current);
+  };
+  const { detailsActive, focused } = navigation;
   const [preset, setPreset] = useState<PatchSeverity>("low");
   const [instructions, setInstructions] = useState<Record<string, string>>({});
   const [createPullRequest, setCreatePullRequest] = useState(false);
@@ -394,33 +402,61 @@ export function PatchTui({
     rows?: number;
     columns?: number;
   };
-  const rows = terminal.rows ?? 28;
-  const columns = terminal.columns ?? 100;
-  const visibleRows = Math.max(4, rows - 15);
+  const viewportFor = useMemo(() => {
+    let cached:
+      { finding: Finding; width: number; details: string[] } | undefined;
+    return (finding: Finding) => {
+      const rows = terminal.rows ?? 28;
+      const width = Math.max(
+        18,
+        Math.floor((terminal.columns ?? 100) * 0.58) - 7,
+      );
+      if (cached?.finding !== finding || cached.width !== width) {
+        cached = {
+          finding,
+          width,
+          details: findingLines(finding, repository, width),
+        };
+      }
+      const visibleRows = Math.max(4, rows - 15);
+      return {
+        rows,
+        visibleRows,
+        details: cached.details,
+        maximumOffset: Math.max(0, cached.details.length - visibleRows),
+      };
+    };
+  }, [repository, terminal]);
+  const current = findings[focused]!;
+  const { rows, visibleRows, details, maximumOffset } = viewportFor(current);
+  const offset = Math.min(navigation.offset, maximumOffset);
   const listStart = Math.max(
     0,
     Math.min(focused - visibleRows + 1, findings.length - visibleRows),
   );
-  const current = findings[focused]!;
-  const details = useMemo(
-    () =>
-      findingLines(
-        current,
-        repository,
-        Math.max(18, Math.floor(columns * 0.58) - 7),
-      ),
-    [columns, current, repository],
-  );
-  const maximumOffset = Math.max(0, details.length - visibleRows);
+  const scroll = (direction: number, page = false) => {
+    const { maximumOffset, visibleRows } = viewportFor(
+      findings[cursor.current.focused]!,
+    );
+    const previous = Math.min(cursor.current.offset, maximumOffset);
+    const next = previous + direction * (page ? visibleRows : 1);
+    navigate({ offset: Math.max(0, Math.min(maximumOffset, next)) });
+  };
+  const resize = useEffectEvent(() => scroll(0));
+  useEffect(() => {
+    terminal.on("resize", resize);
+    return () => {
+      terminal.off("resize", resize);
+    };
+  }, [terminal]);
   const accent = color ? "cyan" : undefined;
   const muted = color ? "gray" : undefined;
   const instructionColor = color ? "magentaBright" : undefined;
   const success = color ? "green" : undefined;
   const severityColor = (severity: PatchSeverity) =>
     color ? SEVERITY_COLORS[severity] : undefined;
-  const findingsColor =
-    pane === "findings" && editing === null ? accent : muted;
-  const detailsColor = pane === "details" && editing === null ? accent : muted;
+  const findingsColor = !detailsActive && editing === null ? accent : muted;
+  const detailsColor = detailsActive && editing === null ? accent : muted;
   const currentInstructions = instructions[current.occurrenceId];
   const selectedFindings = findings.filter(({ occurrenceId }) =>
     selected.has(occurrenceId),
@@ -489,38 +525,27 @@ export function PatchTui({
     } else if (input === "r") {
       setCreatePullRequest((previous) => !previous);
     } else if (input === "i") {
-      const occurrenceId = findings[focusedFinding.current]!.occurrenceId;
+      const occurrenceId = findings[cursor.current.focused]!.occurrenceId;
       setDraft(instructions[occurrenceId] ?? "");
       setEditing(occurrenceId);
     } else if (key.tab || key.leftArrow || key.rightArrow || input === "d") {
-      setPane(pane === "findings" ? "details" : "findings");
+      navigate({ detailsActive: !cursor.current.detailsActive });
     } else if (key.upArrow || key.downArrow || input === "j" || input === "k") {
       const direction = key.downArrow || input === "j" ? 1 : -1;
-      if (pane === "findings") {
-        focusedFinding.current = Math.max(
-          0,
-          Math.min(findings.length - 1, focusedFinding.current + direction),
-        );
-        setFocused(focusedFinding.current);
-        setOffset(0);
-      } else {
-        setOffset((previous) =>
-          Math.max(0, Math.min(maximumOffset, previous + direction)),
-        );
-      }
-    } else if (key.pageUp || key.pageDown) {
-      setOffset((previous) =>
-        Math.max(
-          0,
-          Math.min(
-            maximumOffset,
-            previous + (key.pageDown ? 1 : -1) * visibleRows,
+      if (!cursor.current.detailsActive) {
+        navigate({
+          focused: Math.max(
+            0,
+            Math.min(findings.length - 1, cursor.current.focused + direction),
           ),
-        ),
-      );
+          offset: 0,
+        });
+      } else scroll(direction);
+    } else if (key.pageUp || key.pageDown) {
+      scroll(key.pageDown ? 1 : -1, true);
     } else if (input === " ") {
       const next = new Set(selected);
-      const occurrenceId = findings[focusedFinding.current]!.occurrenceId;
+      const occurrenceId = findings[cursor.current.focused]!.occurrenceId;
       if (next.has(occurrenceId)) next.delete(occurrenceId);
       else next.add(occurrenceId);
       setSelected(next);
