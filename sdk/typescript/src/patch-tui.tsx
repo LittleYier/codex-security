@@ -440,7 +440,10 @@ export function PatchTui({
     );
     const previous = Math.min(cursor.current.offset, maximumOffset);
     const next = previous + direction * (page ? visibleRows : 1);
-    navigate({ offset: Math.max(0, Math.min(maximumOffset, next)) });
+    const offset = Math.max(0, Math.min(maximumOffset, next));
+    // A resize must repaint even if the same row stays at the top.
+    if (direction === 0 || offset !== cursor.current.offset)
+      navigate({ offset });
   };
   const resize = useEffectEvent(() => scroll(0));
   useEffect(() => {
@@ -533,13 +536,13 @@ export function PatchTui({
     } else if (key.upArrow || key.downArrow || input === "j" || input === "k") {
       const direction = key.downArrow || input === "j" ? 1 : -1;
       if (!cursor.current.detailsActive) {
-        navigate({
-          focused: Math.max(
-            0,
-            Math.min(findings.length - 1, cursor.current.focused + direction),
-          ),
-          offset: 0,
-        });
+        const focused = Math.max(
+          0,
+          Math.min(findings.length - 1, cursor.current.focused + direction),
+        );
+        if (focused !== cursor.current.focused || cursor.current.offset !== 0) {
+          navigate({ focused, offset: 0 });
+        }
       } else scroll(direction);
     } else if (key.pageUp || key.pageDown) {
       scroll(key.pageDown ? 1 : -1, true);

@@ -443,7 +443,7 @@ describe("interactive patch finding browser", () => {
 
   test("uses the current finding and viewport for every buffered scroll key", async () => {
     const items = findings(["high", "medium"]);
-    items[0]!.summary = "Review this long finding. ".repeat(300);
+    items[1]!.summary = "Review this long finding. ".repeat(80);
     const app = render(
       createElement(PatchTui, {
         repository: "/work/example",
@@ -455,6 +455,8 @@ describe("interactive patch finding browser", () => {
     const down = "\u001B[B";
     const pageDown = "\u001B[6~";
     const pageUp = "\u001B[5~";
+    const detailRange = () =>
+      app.lastFrame()!.match(/DETAILS\s+(\d+)–\d+\/(\d+)/u)!;
 
     await press(app, down + "\t" + pageDown.repeat(40));
     expect(app.lastFrame()).toContain("occ_2");
@@ -463,13 +465,13 @@ describe("interactive patch finding browser", () => {
     await press(app, pageDown.repeat(2));
     expect(app.lastFrame()).toContain("DETAILS  30–42/");
 
+    const wideRows = Number(detailRange()[2]);
     Object.defineProperty(app.stdout, "columns", { value: 50 });
-    app.stdout.emit("resize");
+    await update(() => app.stdout.emit("resize"));
+    expect(Number(detailRange()[2])).toBeGreaterThan(wideRows);
     await press(app, pageDown.repeat(40));
     expect(app.lastFrame()).toContain("occ_2");
-    const lastPageStart = Number(
-      app.lastFrame()!.match(/DETAILS\s+(\d+)–/u)![1],
-    );
+    const lastPageStart = Number(detailRange()[1]);
     Object.defineProperty(app.stdout, "rows", { value: 38 });
     await update(() => app.stdout.emit("resize"));
     expect(app.lastFrame()).toContain(`DETAILS  ${lastPageStart - 10}–`);
